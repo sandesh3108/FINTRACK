@@ -1,0 +1,68 @@
+name: expense_tracker
+description: Offline-first personal expense and income tracker with Google Sheets sync.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ">=2.5.0 <3.0.0"
+
+  # Local database (offline-first financial store)
+  drift: ">=2.20.0 <3.0.0"
+  drift_flutter: ">=0.2.0 <1.0.0"
+  sqlite3_flutter_libs: ">=0.5.0 <1.0.0"
+  path: ">=1.8.0 <2.0.0"
+
+  # Lightweight UI preferences (theme, accent, last selection)
+  shared_preferences: ">=2.2.0 <3.0.0"
+
+  # Material You (Android 12+) dynamic colour
+  dynamic_color: ">=1.1.0 <2.0.0"
+
+  # Charts
+  fl_chart: ">=0.66.0 <1.0.0"
+
+  # Platform services
+  path_provider: ">=2.1.0 <3.0.0"
+  url_launcher: ">=6.2.0 <7.0.0"
+  # 13.x is federated (Android lives in android_file_picker) and, like share_plus
+  # and package_info_plus above, only applies KGP when built-in Kotlin is off.
+  # It also requires win32 ^6, which is why it has to move together with
+  # package_info_plus 10.x.
+  file_picker: ">=13.0.0 <14.0.0"
+  # 13.x / 10.x are required on AGP 9: older versions apply the Kotlin Gradle
+  # Plugin unconditionally, which AGP 9 rejects when built-in Kotlin is enabled
+  # ("Failed to apply plugin 'kotlin-android'"). 13.x / 10.x guard it behind
+  # `if (agpMajor < 9)`, matching file_picker.
+  share_plus: ">=13.0.0 <14.0.0"
+  package_info_plus: ">=10.0.0 <11.0.0"
+
+  # Formatting / networking
+  intl: ">=0.19.0 <0.21.0"
+  http: ">=1.1.0 <2.0.0"
+
+  # Backup import formats (JSON is parsed by hand, so only these two are needed)
+  csv: ">=6.0.0 <9.0.0"
+  excel: ">=4.0.0 <5.0.0"
+  crypto: ">=3.0.0 <4.0.0"
+
+  # Google OAuth (Google Sheets source-of-truth sync)
+  google_sign_in: ">=6.1.0 <7.0.0"
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ">=4.0.0 <6.0.0"
+  drift_dev: ">=2.20.0 <3.0.0"
+  build_runner: ">=2.4.0 <3.0.0"
+
+flutter:
+  uses-material-design: true

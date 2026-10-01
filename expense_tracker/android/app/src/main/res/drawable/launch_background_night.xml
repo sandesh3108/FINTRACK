@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Launch background (dark theme): same centred mark on the dark app background
+  so the splash matches the theme the app will render with.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/launch_background_night" />
+    <item
+        android:drawable="@drawable/splash_icon"
+        android:gravity="center" />
+</layer-list>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Launcher icon foreground for the adaptive icon.
+
+  Drawn in a 108x108 viewport; the visible "safe zone" is a 66dp circle centred
+  on (54,54), so everything that matters stays inside x 28..80 / y 36..72.
+
+  The mark is a wallet with a card pocket cut out of it (path fill type
+  "evenOdd" creates the hole) and a snap button floating in the pocket.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Wallet body with the card pocket cut out of it. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M38,36 H70 C75.5,36 80,40.5 80,46 V62 C80,67.5 75.5,72 70,72 H38
+            C32.5,72 28,67.5 28,62 V46 C28,40.5 32.5,36 38,36 Z
+            M60,48 H70 C73.3,48 76,50.7 76,54 C76,57.3 73.3,60 70,60 H60
+            C56.7,60 54,57.3 54,54 C54,50.7 56.7,48 60,48 Z" />
+
+    <!-- Snap button inside the pocket. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M65,50.5 A3.5,3.5 0 1,0 65,57.5 A3.5,3.5 0 1,0 65,50.5 Z" />
+</vector>

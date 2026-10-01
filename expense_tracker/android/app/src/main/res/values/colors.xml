@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand colour used behind the adaptive launcher icon foreground. -->
+    <color name="ic_launcher_background">#4F46E5</color>
+    <!-- Window background used by the launch (splash) theme. -->
+    <color name="launch_background">#FFFFFF</color>
+    <color name="launch_background_night">#14151A</color>
+</resources>

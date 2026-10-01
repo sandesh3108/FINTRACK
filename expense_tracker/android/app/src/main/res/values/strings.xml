@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shown as the launcher label and in system app info. -->
+    <string name="app_name">FINTRACK</string>
+</resources>
