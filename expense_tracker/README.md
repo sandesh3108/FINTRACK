@@ -422,7 +422,7 @@ setup screen says **"Configured — ids supplied by this build"**; pasted ids sa
 ## Testing
 
 ```sh
-flutter test        # 183 tests
+flutter test        # 188 tests
 flutter analyze     # must report no issues
 ```
 

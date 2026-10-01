@@ -100,7 +100,10 @@ class GoogleSheetsService {
     required _Grid grid,
   }) {
     if (grid.rows < 1 || grid.columns < 1) return null;
-    final start = first.clamp(1, grid.rows);
+    // A span that is empty, or that starts past the last row, is not a range
+    // Google will accept - it answers HTTP 400 rather than returning nothing.
+    if (first > last || first > grid.rows) return null;
+    final start = first;
     final end = last.clamp(start, grid.rows);
     final width = columns.clamp(1, grid.columns);
     return 'A$start:${_columnLetter(width)}$end';
@@ -123,6 +126,23 @@ class GoogleSheetsService {
   }
 
   // --------------------------------------------------------------- operations
+
+  /// The id exactly as it has to appear in the URL.
+  ///
+  /// Whitespace never belongs in a spreadsheet id, but a paste picks it up
+  /// readily enough: a trailing newline from a message, a leading space from a
+  /// careful selection, a non-breaking space from a rich-text copy. Google
+  /// decodes the path before it validates the id, so any of those becomes part
+  /// of the id and the whole request is rejected - which arrives as an HTTP 400
+  /// that blames the spreadsheet for a character the clipboard added.
+  ///
+  /// Stripped here, once, so no caller has to remember to do it.
+  static String _cleanId(String input) {
+    final squeezed = input.replaceAll(RegExp(r'\s'), '');
+    if (!squeezed.contains('/')) return squeezed;
+    // A whole link rather than an id: take the id out of it.
+    return SheetReference.idFrom(squeezed) ?? squeezed;
+  }
 
   /// Creates an empty spreadsheet whose first tab is named
   /// [AppConfig.sheetTabName].
@@ -158,10 +178,11 @@ class GoogleSheetsService {
   /// Reads the title of an existing spreadsheet, proving the id is reachable
   /// with the current credentials.
   Future<SheetReference> open(String spreadsheetId) async {
+    final id = _cleanId(spreadsheetId);
     final body = await _send(
       _request(
         'GET',
-        Uri.https(_host, '$_root/spreadsheets/$spreadsheetId',
+        Uri.https(_host, '$_root/spreadsheets/$id',
             <String, String>{'fields': 'properties.title'}),
       ),
     );
@@ -169,7 +190,7 @@ class GoogleSheetsService {
     final title = properties is Map && properties['title'] is String
         ? properties['title'] as String
         : 'Spreadsheet';
-    return SheetReference.fromId(spreadsheetId, title: title);
+    return SheetReference.fromId(id, title: title);
   }
 
   /// Asks Google a question it is allowed to answer "not found".
@@ -205,7 +226,8 @@ class GoogleSheetsService {
   /// Trailing empty cells are dropped by Google, so rows are normalised to the
   /// width of the widest row.
   Future<List<List<String>>> read(String spreadsheetId) async {
-    final range = _importRange(await _grid(spreadsheetId));
+    final id = _cleanId(spreadsheetId);
+    final range = _importRange(await _grid(id));
     if (range == null) return const <List<String>>[];
 
     final body = await _send(
@@ -213,7 +235,7 @@ class GoogleSheetsService {
         'GET',
         Uri.https(
           _host,
-          '$_root/spreadsheets/$spreadsheetId/values/$range',
+          '$_root/spreadsheets/$id/values/$range',
           <String, String>{'majorDimension': 'ROWS'},
         ),
       ),
@@ -258,55 +280,65 @@ class GoogleSheetsService {
   /// must not duplicate the ledger, and a transaction deleted in the app has
   /// to disappear from the sheet too. The caller supplies [rows] already
   /// sorted by date, which is what keeps the sheet readable day by day.
-  Future<void> writeTable(
+  ///
+  /// The table is written **first** and only afterwards is the stale tail
+  /// underneath it erased. That ordering is what makes the erase safe to get
+  /// wrong: it only ever names rows *below* what was just written, so it cannot
+  /// undo the export, and refusing it is returned as a note rather than thrown.
+  /// A leftover row is cosmetic; a failed export is a backup that did not
+  /// happen.
+  ///
+  /// Returns `null` when everything, tail included, went through.
+  Future<String?> writeTable(
     String spreadsheetId,
     List<List<String>> rows,
   ) async {
+    final id = _cleanId(spreadsheetId);
+
     var width = AppConfig.sheetColumns.length;
     for (final row in rows) {
       if (row.length > width) width = row.length;
     }
 
+    final needed = AppConfig.sheetHeaderRow + rows.length;
+
     // Grow the tab first when the export is longer than the sheet it is going
-    // into. The clear below cannot name rows that do not exist yet - Google
-    // rejects the whole range with HTTP 400 instead of clipping it - and a
-    // brand-new sheet has 1000 rows where a large export needs more.
-    final grid = await _ensureGrid(
-      spreadsheetId,
-      await _grid(spreadsheetId),
-      AppConfig.sheetHeaderRow + rows.length,
-      width,
+    // into: `values.update` cannot name rows that do not exist yet, and Google
+    // rejects the whole range with HTTP 400 instead of clipping it.
+    final grid = await _ensureGrid(id, await _grid(id), needed, width);
+
+    await writeCells(
+      id,
+      'A${AppConfig.sheetHeaderRow}',
+      <List<String>>[AppConfig.sheetColumns, ...rows],
     );
 
-    // Blank everything from the heading to the bottom of the tab, so the tail
-    // of a longer previous run is erased instead of surviving underneath.
-    // Clamped to the grid rather than to a row count this app guessed at.
-    final range = _range(
-      first: AppConfig.sheetHeaderRow,
+    // Rows below the table, out to the bottom of the tab - everything a longer
+    // previous run left behind. Nothing to do when the table reaches the
+    // bottom, and nothing is attempted on a size the app only guessed at.
+    if (!grid.known) return null;
+    final tail = _range(
+      first: needed + 1,
       last: grid.rows,
       columns: width,
       grid: grid,
     );
+    if (tail == null) return null;
 
-    if (range != null) {
+    try {
       await _send(
         _request(
           'POST',
-          Uri.https(
-            _host,
-            '$_root/spreadsheets/$spreadsheetId/values/'
-            '$range/clear',
-          ),
+          Uri.https(_host, '$_root/spreadsheets/$id/values/$tail/clear'),
           body: <String, dynamic>{},
         ),
       );
+      return null;
+    } on SheetsException catch (error) {
+      return 'The table was written, but the rows underneath it could not be '
+          'cleared - delete them by hand, then export again. '
+          '${error.technical ?? ''}';
     }
-
-    await writeCells(
-      spreadsheetId,
-      'A${AppConfig.sheetHeaderRow}',
-      <List<String>>[AppConfig.sheetColumns, ...rows],
-    );
   }
 
   /// Overwrites the given top-left anchor with [rows].
@@ -322,6 +354,7 @@ class GoogleSheetsService {
   ) async {
     if (rows.isEmpty) return;
 
+    final id = _cleanId(spreadsheetId);
     final start = _Cell.parse(anchor);
     var width = 0;
     for (final row in rows) {
@@ -339,7 +372,7 @@ class GoogleSheetsService {
         'PUT',
         Uri.https(
           _host,
-          '$_root/spreadsheets/$spreadsheetId/values/$range',
+          '$_root/spreadsheets/$id/values/$range',
           <String, String>{'valueInputOption': 'USER_ENTERED'},
         ),
         body: <String, dynamic>{
@@ -368,22 +401,37 @@ class GoogleSheetsService {
       ),
     );
 
+    final parsed = _parseGrid(body);
+    if (parsed != null) return parsed;
+
+    // The field mask is an optimisation, not a requirement. Ask again without
+    // it rather than guessing the size: a wrong guess is what sends the next
+    // range outside the grid, which is the HTTP 400 this code exists to stop.
+    final plain = await _send(
+      _request('GET', Uri.https(_host, '$_root/spreadsheets/$spreadsheetId')),
+    );
+    return _parseGrid(plain) ?? const _Grid.fallback();
+  }
+
+  /// The first tab's dimensions from a spreadsheet reply, or `null` when Google
+  /// answered in a shape this parser does not recognise.
+  static _Grid? _parseGrid(Map<String, dynamic> body) {
     final sheets = body['sheets'];
-    if (sheets is! List || sheets.isEmpty || sheets.first is! Map) {
-      return const _Grid.fallback();
-    }
+    if (sheets is! List || sheets.isEmpty || sheets.first is! Map) return null;
     final properties = (sheets.first as Map)['properties'];
-    if (properties is! Map) return const _Grid.fallback();
+    if (properties is! Map) return null;
     final grid = properties['gridProperties'];
-    if (grid is! Map) return const _Grid.fallback();
+    if (grid is! Map) return null;
 
     final rows = grid['rowCount'];
+    if (rows is! int || rows < 1) return null;
     final columns = grid['columnCount'];
     final sheetId = properties['sheetId'];
     return _Grid(
       sheetId: sheetId is int ? sheetId : 0,
-      rows: rows is int && rows > 0 ? rows : _Grid.defaultRows,
+      rows: rows,
       columns: columns is int && columns > 0 ? columns : _Grid.defaultColumns,
+      known: true,
     );
   }
 
@@ -397,6 +445,13 @@ class GoogleSheetsService {
     int rows,
     int columns,
   ) async {
+    // Never resize a tab whose size Google did not report. The fallback is a
+    // placeholder of 1000 rows; sending that as rowCount to a sheet that really
+    // holds 5000 would truncate it, and the rows below are not this app's to
+    // delete. Skipping the growth can cost an export that needs more room - it
+    // cannot cost anybody's data, and the refusal that follows is explainable.
+    if (!grid.known) return grid;
+
     final wantRows = rows.clamp(grid.rows, _Grid.maxRows);
     final wantColumns = columns.clamp(grid.columns, _Grid.maxColumns);
     if (wantRows == grid.rows && wantColumns == grid.columns) return grid;
@@ -482,12 +537,18 @@ class GoogleSheetsService {
         if (message is String && message.isNotEmpty) googleMessage = message;
       }
     } on FormatException {
-      // Not JSON - keep the raw body as the technical detail only.
+      // Not JSON: an edge page, or an empty body. Reported below instead.
     }
 
+    // Google explains itself in JSON. When it does not, the reply was
+    // something else entirely - an HTML page off the edge, an empty body - and
+    // keeping only the status would leave nothing to diagnose. A capped copy of
+    // the raw reply rides along so the next report names the cause outright.
+    final raw = body.trim();
     final technical = 'HTTP $status'
         '${where == null ? '' : ' $where'}'
-        '${googleMessage == null ? '' : ': $googleMessage'}';
+        '${googleMessage == null ? '' : ': $googleMessage'}'
+        '${googleMessage != null || raw.isEmpty ? '' : ' | reply: ${_clip(raw)}'}';
 
     return switch (status) {
       400 => SheetsException(
@@ -520,6 +581,12 @@ class GoogleSheetsService {
         ),
     };
   }
+
+  /// One line, capped, so a wall of HTML cannot bury the status above it.
+  static String _clip(String text, {int max = 400}) {
+    final flat = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return flat.length <= max ? flat : '${flat.substring(0, max)}\u2026';
+  }
 }
 
 /// Real size of the tab this app reads and writes.
@@ -529,6 +596,7 @@ class _Grid {
     required this.sheetId,
     required this.rows,
     required this.columns,
+    this.known = true,
   });
 
   /// Used when a reply did not carry the grid: these are the dimensions every
@@ -537,7 +605,8 @@ class _Grid {
   const _Grid.fallback()
       : sheetId = 0,
         rows = defaultRows,
-        columns = defaultColumns;
+        columns = defaultColumns,
+        known = false;
 
   /// A fresh Google Sheet is 1000 rows by 26 columns.
   static const int defaultRows = 1000;
@@ -551,6 +620,10 @@ class _Grid {
   final int sheetId;
   final int rows;
   final int columns;
+
+  /// Whether Google said so, or whether these are the defaults the app fell
+  /// back to. A guess is never used to erase anything.
+  final bool known;
 }
 
 /// A parsed A1 anchor: 1-based column and row.

@@ -128,6 +128,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **An export can no longer be lost to the call that tidies up after it.**
+  *Export* used to erase the sheet from the heading to the bottom first and only
+  then write the table, so when Google refused the erase the whole export died
+  with it and nothing reached the spreadsheet. The order is now reversed: the
+  heading and rows are written first, and only then is the leftover tail — rows
+  **below** the table, which the write never touched — cleared. That erase is
+  best effort: if Google still refuses, the export is reported as done with a
+  note carrying Google's reason, because a stale row is cosmetic and a failed
+  export is a backup that did not happen. A tab whose size could not be measured
+  is no longer resized either; the placeholder size used to be written back as
+  `rowCount`, which would have truncated a larger sheet and taken the rows below
+  it with it.
+- **Whitespace from a paste is stripped from the spreadsheet id** before any URL
+  is built. Google decodes the path before validating the id, so a trailing
+  newline or a leading space picked up while copying becomes part of the id and
+  is reported as an HTTP 400 that blames the spreadsheet for a character the
+  clipboard added.
+- **A reply that is not JSON is kept, not dropped.** When Google explains itself
+  its wording was already shown; when it answers with an HTML page or an empty
+  body the app showed only `HTTP 400` with no reason at all, which is exactly
+  what made the failure above undiagnosable. A capped copy of the raw reply now
+  rides along with the status and the call that produced it.
 - **Google Sheets answered HTTP 400 with *"could not complete the request"* on
   every call.** Two causes, both in how the range reached Google:
 

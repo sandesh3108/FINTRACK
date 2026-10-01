@@ -482,14 +482,15 @@ class _GoogleSheetsScreenState extends ConsumerState<GoogleSheetsScreen> {
         final service = _service(token);
         // One call writes heading and rows together so re-exporting replaces
         // the table instead of stacking a second copy underneath it.
-        await service.writeTable(
+        final warning = await service.writeTable(
           settings.googleSpreadsheetId,
           <List<String>>[for (final row in rows) _toCells(row)],
         );
         await ref.read(settingsRepositoryProvider).markSynced(DateTime.now());
 
-        _say('Exported ${rows.length} transaction'
-            '${rows.length == 1 ? '' : 's'}, oldest date first.');
+        final done = 'Exported ${rows.length} transaction'
+            '${rows.length == 1 ? '' : 's'}, oldest date first.';
+        _say(warning == null ? done : '$done $warning');
       });
 
   /// Step 1 of import: pull the sheet down and work out the column mapping.
